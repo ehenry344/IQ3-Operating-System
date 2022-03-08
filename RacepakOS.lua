@@ -1,3 +1,11 @@
+--[[
+gilaga4815 
+
+A-Chassis Racepak IQ3 Drag Plugin 
+
+Updated : 3 / 7 / 2022 
+]]
+
 local car = script.Parent.Car.Value
 local racepakEvent = car:WaitForChild("RPDataBus")
 local _Tune = require(car["A-Chassis Tune"])
@@ -8,7 +16,6 @@ local carState = script.Parent.IsOn
 -- System Setup Handling 
 
 local nightLight = _Tune.Racepak.NightLight 
-local warningData = _Tune.Racepak.Warnings 
 
 -- simulation handling 
 
@@ -28,7 +35,7 @@ local function genSimulated(min, max, prec, modifier)
 	end
 end
 
--- updateCallbacks : contains special functions that modify input for special cases 
+-- input modifiers for special cases 
 
 local updateCallbacks = { 
 	["Gear"] = function(gear) 
@@ -39,7 +46,7 @@ local updateCallbacks = {
 	end,
 }
 
--- handle the setup updaters 
+-- acquire the relevant values to track 
 
 local function findValue(vName) -- Searches Common Directories For Value Instance 
 	if valueFolder:FindFirstChild(vName) then 
@@ -53,10 +60,20 @@ local function findValue(vName) -- Searches Common Directories For Value Instanc
 	end
 end
 
--- properly create the connections 
+-- manage warning instances 
+
+local function handleWarning(valueName) 
+	for channel, data in pairs(_Tune.Racepak.Warnings) do 
+		if data[1] == valueName and type(data[2]) == "table" then 
+			return {channel, data[2], (data[3] or "Out")}
+		end
+	end
+end
+
+-- setup the connections 
 
 local usesRPM = nil 
-local startupValues = {} -- Replace Placeholders On Startup 
+local startupValues = {} 
 
 for i,current in pairs(_Tune.Racepak.DisplayData) do 
 	local updateString = ("Update" .. i) 
@@ -65,41 +82,48 @@ for i,current in pairs(_Tune.Racepak.DisplayData) do
 	if type(valName) ~= "table" then
 		local valInstance = findValue(valName) 
 		
-		usesRPM = not usesRPM and valName == "RPM"  -- Checks if RPM needs to be defined for the tach lights to function 
+		usesRPM = not usesRPM and valName == "RPM" 
 		
 		if not valInstance then 
-			startupValues[i] = valName 
-			
+			startupValues[i] = valName 	
 			continue 
 		end		
 		
 		local updateFunction = updateCallbacks[valName] 		
-		local updateProperty = valInstance:IsA("ValueBase") and "Value" or valInstance:IsA("TextLabel") and "Text"
+		local updateProperty = valInstance:IsA("ValueBase") and "Value" or "Text" 
 		
-		-- Adds to the default values on startup 
+		local warningInfo = handleWarning(valName) 
+		local lastUpdate = warningInfo and os.clock() 
 		
 		startupValues[i] = valInstance 
-		
-		-- connect the updaters 
-					
-		if updateFunction then
-			valInstance:GetPropertyChangedSignal(updateProperty):Connect(function()
-				racepakEvent:FireServer(updateString, updateFunction(valInstance[updateProperty])) 
-			end)
-			
-			continue 
-		end 
-		
+
 		valInstance:GetPropertyChangedSignal(updateProperty):Connect(function()
-			racepakEvent:FireServer(updateString, valInstance[updateProperty]) 
+			local currentValue = (not updateFunction and valInstance[updateProperty]) or updateFunction(valInstance[updateProperty])
+			
+			racepakEvent:FireServer(i, currentValue) 
+			
+			if lastUpdate and os.clock() - lastUpdate >= 2 then 
+				if updateProperty == "Text" then 
+					currentValue = tonumber(string.match(currentValue, "%d+")) 
+				end
+				
+				local status = warningInfo[3] == "Out" and 
+					(currentValue < warningInfo[2][1] or currentValue > warningInfo[2][2]) or 
+					warningInfo[3] == "In" and 
+					(currentValue > warningInfo[2][1] and currentValue < warningInfo[2][2]) 
+
+				racepakEvent:FireServer("Warning", warningInfo[1], status) 
+				
+				lastUpdate = os.clock() 
+			end
 		end)
 	else		
-		coroutine.wrap(function() -- Updates almost instantaneously on startup, not too concerned with default startup value 
-			local newSimValue = genSimulated(valName[1], valName[2], valName[3]) 
+		coroutine.wrap(function() 
+			local newSim = genSimulated(valName[1], valName[2], valName[3]) 
 			
 			while task.wait(1) do
 				if carState.Value then 
-					racepakEvent:FireServer(updateString, newSimValue()) 
+					racepakEvent:FireServer(i, newSim()) 
 				end 
 			end
 		end)() 
@@ -126,7 +150,7 @@ racepakEvent.OnClientEvent:Connect(function()
 			value = updateCallbacks[value.Name] and updateCallbacks[value.Name](value[property]) or value[property]
 		end
 		
-		racepakEvent:FireServer("Update"..i, value) 
+		racepakEvent:FireServer(i, value) 
 	end
 end)
 
@@ -153,11 +177,3 @@ if nightLight then
 		racepakEvent:FireServer("NightLight") 
 	end)
 end
-
---[[
-How to make the warning system work : 
-	- Methods in which we can detect if the warnings will go : 
-		-- 1. Connect to all of the values that are being monitored and wait for it to change 
-		-- 2. Check within setup system if they are being connected 
-]]
-
