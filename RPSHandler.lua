@@ -1,7 +1,3 @@
--- Handle the Whitelist 
-
-local whitelist = require(9042302209) 
-
 local car = script.Parent.Parent
 local F = {}
 
@@ -10,13 +6,6 @@ local tachLights = racepak:WaitForChild("Lites")
 local warningLights = racepak:WaitForChild("WarningLites")
 local screenUI = racepak:WaitForChild("Screen"):WaitForChild("NumReadout")
 local RPMBar = screenUI:WaitForChild("RPMbar")
-
--- Handle Whitelist 
-
-if not (whitelist.Licensed[game.CreatorId] or whitelist.Owners[game.CreatorId] and game:GetService("RunService"):IsStudio()) then 
-	racepak:Destroy()
-	script.Parent:Destroy() 
-end
 
 -- setup data 
 
@@ -27,8 +16,6 @@ local tachIntervals = {}
 
 local flashInterval = false 
 local maxRPM = nil 
-
--- TODO : Make the whitelist system (work in RDRA, NRDA, Real Deal Grudge) 
 
 -- RPM Updates / Light Handling 
 
